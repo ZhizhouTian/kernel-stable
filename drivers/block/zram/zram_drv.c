@@ -999,6 +999,62 @@ static struct attribute_group zram_disk_attr_group = {
 	.attrs = zram_disk_attrs,
 };
 
+#ifdef CONFIG_E_SHOW_MEM
+static int zram_e_show_mem_handler(struct notifier_block *nb,
+				unsigned long val, void *data)
+{
+	int i;
+	u64 size = 0;
+	struct zram *zram = NULL;
+	struct zram_meta *meta;
+	unsigned long *used = data;
+	unsigned long total_used = 0;
+	enum e_show_mem_type type = val;
+
+	printk("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
+	printk("Enhanced Mem-info :ZRAM\n");
+
+	for (i = 0; i < num_devices; i++) {
+		zram = &zram_devices[i];
+		meta = zram->meta;
+		down_read(&zram->init_lock);
+		if (init_done(zram)) {
+			size = zs_get_total_pages(meta->mem_pool);
+			*used += ((unsigned long)size) >> PAGE_SHIFT;
+			total_used += ((unsigned long)size) >> PAGE_SHIFT;
+		}
+		up_read(&zram->init_lock);
+	}
+
+	printk("Detail:\n");
+	for (i = 0; i < num_devices; i++) {
+		zram = &zram_devices[i];
+		meta = zram->meta;
+		if (E_SHOW_MEM_CLASSIC == type || E_SHOW_MEM_ALL == type) {
+			printk("        orig:%lu pages,  %lu kB\n",
+				atomic64_read(&zram->stats.pages_stored),
+				(atomic64_read(&zram->stats.pages_stored)
+					<< PAGE_SHIFT) / 1024);
+			printk("        compressed:%lu kB\n",
+				atomic64_read(&zram->stats.compr_data_size)
+					/ 1024);
+		}
+
+		if (E_SHOW_MEM_ALL == type) {
+			/* todo: */
+		}
+	}
+
+	printk("Total used:%lu pages, %lu kB\n", total_used,
+		(total_used << PAGE_SHIFT) / 1024);
+	return 0;
+}
+
+static struct notifier_block zram_e_show_mem_notifier = {
+	.notifier_call = zram_e_show_mem_handler,
+};
+#endif
+
 static int create_device(struct zram *zram, int device_id)
 {
 	int ret = -ENOMEM;
@@ -1126,6 +1182,9 @@ static int __init zram_init(void)
 
 	pr_info("Created %u device(s) ...\n", num_devices);
 
+#ifdef CONFIG_E_SHOW_MEM
+	register_e_show_mem_notifier(&zram_e_show_mem_notifier);
+#endif
 	return 0;
 
 free_devices:
@@ -1157,6 +1216,9 @@ static void __exit zram_exit(void)
 	unregister_blkdev(zram_major, "zram");
 
 	kfree(zram_devices);
+#ifdef CONFIG_E_SHOW_MEM
+	unregister_e_show_mem_notifier(&zram_e_show_mem_notifier);
+#endif
 	pr_debug("Cleanup done!\n");
 }
 
