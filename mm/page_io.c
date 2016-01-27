@@ -183,9 +183,12 @@ bad_bmap:
  * We may have stale swap cache pages in memory: notice
  * them here and get rid of the unnecessary final write.
  */
+static s64 sum = 0;
+static u64 time = 0;
 int swap_writepage(struct page *page, struct writeback_control *wbc)
 {
 	int ret = 0;
+	ktime_t stime, etime;
 
 	if (try_to_free_swap(page)) {
 		unlock_page(page);
@@ -197,7 +200,14 @@ int swap_writepage(struct page *page, struct writeback_control *wbc)
 		end_page_writeback(page);
 		goto out;
 	}
+	stime = ktime_get();
 	ret = __swap_writepage(page, wbc, end_swap_bio_write);
+	etime = ktime_get();
+	sum += etime.tv64 - stime.tv64;
+	time++;
+
+	if (time >= 10000 && time < 10020)
+		pr_err("zhizhou.tian sum and time %lld %llu\n", sum, time);
 out:
 	return ret;
 }
