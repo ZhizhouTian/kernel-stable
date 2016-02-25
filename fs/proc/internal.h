@@ -14,6 +14,8 @@
 #include <linux/spinlock.h>
 #include <linux/atomic.h>
 #include <linux/binfmts.h>
+#include <linux/swap.h>
+#include <linux/swapops.h>
 
 struct ctl_table_header;
 struct mempolicy;
@@ -296,3 +298,4 @@ extern unsigned long task_statm(struct mm_struct *,
 				unsigned long *, unsigned long *,
 				unsigned long *, unsigned long *);
 extern void task_mem(struct seq_file *, struct mm_struct *);
+extern struct swap_info_struct *swap_info_get(swp_entry_t entry);
