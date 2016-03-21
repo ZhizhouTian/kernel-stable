@@ -30,6 +30,7 @@
 #include <linux/oom.h>
 #include <linux/wait.h>
 #include <linux/mm.h>
+#include <linux/mount.h>
 
 /*
  * Balloon device works in 4K page units.  So each page is pointed to by
@@ -44,6 +45,10 @@
 static int oom_pages = OOM_VBALLOON_DEFAULT_PAGES;
 module_param(oom_pages, int, S_IRUSR | S_IWUSR);
 MODULE_PARM_DESC(oom_pages, "pages to free on OOM");
+
+#ifdef CONFIG_BALLOON_COMPACTION
+static struct vfsmount *balloon_mnt;
+#endif
 
 struct virtio_balloon {
 	struct virtio_device *vdev;
@@ -482,10 +487,29 @@ static int virtballoon_migratepage(struct balloon_dev_info *vb_dev_info,
 
 	mutex_unlock(&vb->balloon_lock);
 
+	ClearPageIsolated(page);
 	put_page(page); /* balloon reference */
 
 	return MIGRATEPAGE_SUCCESS;
 }
+
+static struct dentry *balloon_mount(struct file_system_type *fs_type,
+		int flags, const char *dev_name, void *data)
+{
+	static const struct dentry_operations ops = {
+		.d_dname = simple_dname,
+	};
+
+	return mount_pseudo(fs_type, "balloon-kvm:", NULL, &ops,
+				BALLOON_KVM_MAGIC);
+}
+
+static struct file_system_type balloon_fs = {
+	.name           = "balloon-kvm",
+	.mount          = balloon_mount,
+	.kill_sb        = kill_anon_super,
+};
+
 #endif /* CONFIG_BALLOON_COMPACTION */
 
 static int virtballoon_probe(struct virtio_device *vdev)
@@ -516,12 +540,25 @@ static int virtballoon_probe(struct virtio_device *vdev)
 
 	balloon_devinfo_init(&vb->vb_dev_info);
 #ifdef CONFIG_BALLOON_COMPACTION
+	balloon_mnt = kern_mount(&balloon_fs);
+	if (IS_ERR(balloon_mnt)) {
+		err = PTR_ERR(balloon_mnt);
+		goto out_free_vb;
+	}
+
 	vb->vb_dev_info.migratepage = virtballoon_migratepage;
+	vb->vb_dev_info.inode = alloc_anon_inode(balloon_mnt->mnt_sb);
+	if (IS_ERR(vb->vb_dev_info.inode)) {
+		err = PTR_ERR(vb->vb_dev_info.inode);
+		vb->vb_dev_info.inode = NULL;
+		goto out_unmount;
+	}
+	vb->vb_dev_info.inode->i_mapping->a_ops = &balloon_aops;
 #endif
 
 	err = init_vqs(vb);
 	if (err)
-		goto out_free_vb;
+		goto out_unmount;
 
 	vb->nb.notifier_call = virtballoon_oom_notify;
 	vb->nb.priority = VIRTBALLOON_OOM_NOTIFY_PRIORITY;
@@ -535,6 +572,10 @@ static int virtballoon_probe(struct virtio_device *vdev)
 
 out_oom_notify:
 	vdev->config->del_vqs(vdev);
+out_unmount:
+	if (vb->vb_dev_info.inode)
+		iput(vb->vb_dev_info.inode);
+	kern_unmount(balloon_mnt);
 out_free_vb:
 	kfree(vb);
 out:
@@ -567,6 +608,8 @@ static void virtballoon_remove(struct virtio_device *vdev)
 	cancel_work_sync(&vb->update_balloon_stats_work);
 
 	remove_common(vb);
+	if (vb->vb_dev_info.inode)
+		iput(vb->vb_dev_info.inode);
 	kfree(vb);
 }
 
