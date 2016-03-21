@@ -120,6 +120,8 @@ static void vma_stop(struct proc_maps_private *priv)
 	mmput(mm);
 }
 
+/* 判断还是否有下一个vma。如果已经到达末尾（vm_next==NULL）则返回tail_vma
+ * Linux允许配置，最后一个vma是空或者一个标记。priv->tail_vma就应该是那个标记 */
 static struct vm_area_struct *
 m_next_vma(struct proc_maps_private *priv, struct vm_area_struct *vma)
 {
@@ -130,7 +132,12 @@ m_next_vma(struct proc_maps_private *priv, struct vm_area_struct *vma)
 
 static void m_cache_vma(struct seq_file *m, struct vm_area_struct *vma)
 {
+	/* 这个判断表示输出的数据个数小于seq buf的剩余大小，
+	 * 可以完全拷贝给缓冲。此时version变为下一个vma。否则version不变，
+	 * 下一次仍然输出这个vma */
 	if (m->count < m->size)	/* vma is copied successfully */
+		/* file->private_data是struct seq_file*
+		 * seq_file->private是proc_maps_private */
 		m->version = m_next_vma(m->private, vma) ? vma->vm_start : -1UL;
 }
 
@@ -150,6 +157,7 @@ static void *m_start(struct seq_file *m, loff_t *ppos)
 	if (!priv->task)
 		return ERR_PTR(-ESRCH);
 
+	/* 指定进程的mm_struct */
 	mm = priv->mm;
 	if (!mm || !atomic_inc_not_zero(&mm->mm_users))
 		return NULL;
@@ -166,7 +174,9 @@ static void *m_start(struct seq_file *m, loff_t *ppos)
 
 	m->version = 0;
 	if (pos < mm->map_count) {
+		/* mm->mmap链表包含了指定进程所有的vma */
 		for (vma = mm->mmap; pos; pos--) {
+			/* 以每一个vma的start作为version */
 			m->version = vma->vm_start;
 			vma = vma->vm_next;
 		}
@@ -181,6 +191,8 @@ static void *m_start(struct seq_file *m, loff_t *ppos)
 	return NULL;
 }
 
+/* m_next还能决定“步长”。调用一次,则m->index就会增长一次。
+ * 在读取vma的时候，pos会--。这个函数里增长多少，那里就会遍历几次 */
 static void *m_next(struct seq_file *m, void *v, loff_t *pos)
 {
 	struct proc_maps_private *priv = m->private;
@@ -600,8 +612,10 @@ static int show_smap(struct seq_file *m, void *v, int is_pid)
 	if (vma->vm_mm && !is_vm_hugetlb_page(vma))
 		walk_page_range(vma->vm_start, vma->vm_end, &smaps_walk);
 
+	/* cat /proc/pid/smaps的标题输出 */
 	show_map_vma(m, vma, is_pid);
 
+	/* 干货输出 */
 	seq_printf(m,
 		   "Size:           %8lu kB\n"
 		   "Rss:            %8lu kB\n"
