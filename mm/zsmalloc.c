@@ -195,10 +195,13 @@ struct size_class {
 	unsigned int index;
 
 	/* Number of PAGE_SIZE sized pages to combine to form a 'zspage' */
+	/* 比如一个class是3/8个page，则这个值就是3个page
+	 * （共可以分配8个class级别的chunks）*/
 	int pages_per_zspage;
 
 	spinlock_t lock;
 
+	/* 一个class下有三组page列表：基本满的，基本空的和 */
 	struct page *fullness_list[_ZS_NR_FULLNESS_GROUPS];
 };
 
@@ -995,6 +998,7 @@ EXPORT_SYMBOL_GPL(zs_destroy_pool);
  * otherwise 0.
  * Allocation requests with size > ZS_MAX_ALLOC_SIZE will fail.
  */
+/* 从pool中分配指定大小的块，分配超过一页就会失败。成功则返回对象的句柄 */
 unsigned long zs_malloc(struct zs_pool *pool, size_t size)
 {
 	unsigned long obj;
@@ -1008,6 +1012,8 @@ unsigned long zs_malloc(struct zs_pool *pool, size_t size)
 	if (unlikely(!size || size > ZS_MAX_ALLOC_SIZE))
 		return 0;
 
+	/* 根据size获得它对应的“级别”。zspool的内存管理有点像buddy系统，
+	 * 将page分为32到PAGE_SIZE大小"chunks" */
 	class_idx = get_size_class_index(size);
 	class = &pool->size_class[class_idx];
 	BUG_ON(class_idx != class->index);

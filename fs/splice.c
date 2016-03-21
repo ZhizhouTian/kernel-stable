@@ -576,6 +576,7 @@ static ssize_t kernel_readv(struct file *file, const struct iovec *vec,
 	old_fs = get_fs();
 	set_fs(get_ds());
 	/* The cast to a user pointer is valid due to the set_fs() */
+	/* ==> 函数栈向下调用 */
 	res = vfs_readv(file, (const struct iovec __user *)vec, vlen, &pos);
 	set_fs(old_fs);
 
@@ -598,6 +599,7 @@ ssize_t kernel_write(struct file *file, const char *buf, size_t count,
 }
 EXPORT_SYMBOL(kernel_write);
 
+/* 该函数主要是创建splice_pipe_desc，调用splice_to_pipe来通过desc创建pipe */
 ssize_t default_file_splice_read(struct file *in, loff_t *ppos,
 				 struct pipe_inode_info *pipe, size_t len,
 				 unsigned int flags)
@@ -652,6 +654,8 @@ ssize_t default_file_splice_read(struct file *in, loff_t *ppos,
 		offset = 0;
 	}
 
+	/* ==> 函数栈向下调用
+	 * 进入文件系统 */
 	res = kernel_readv(in, vec, spd.nr_pages, *ppos);
 	if (res < 0) {
 		error = res;
@@ -1151,6 +1155,7 @@ static long do_splice_to(struct file *in, loff_t *ppos,
 	else
 		splice_read = default_file_splice_read;
 
+	/* 函数栈向下调用 default_file_splice_read */
 	return splice_read(in, ppos, pipe, len, flags);
 }
 
@@ -1167,6 +1172,8 @@ static long do_splice_to(struct file *in, loff_t *ppos,
  *    that process.
  *
  */
+/* 通过这个函数来进行数据拼接，拼接需要内部的匿名pipe（pipe_inode_info
+ * , a linux kernel pipe). 这个pipe在整个生命周期中可反复使用 */
 ssize_t splice_direct_to_actor(struct file *in, struct splice_desc *sd,
 			       splice_direct_actor *actor)
 {
@@ -1191,6 +1198,7 @@ ssize_t splice_direct_to_actor(struct file *in, struct splice_desc *sd,
 	 */
 	pipe = current->splice_pipe;
 	if (unlikely(!pipe)) {
+		/* 申请pipe */
 		pipe = alloc_pipe_info();
 		if (!pipe)
 			return -ENOMEM;
@@ -1222,6 +1230,8 @@ ssize_t splice_direct_to_actor(struct file *in, struct splice_desc *sd,
 		size_t read_len;
 		loff_t pos = sd->pos, prev_pos = pos;
 
+		/* ==> 函数栈向下调用
+		 * 初始化一个从文件到pipe的拼接 */
 		ret = do_splice_to(in, &pos, pipe, len, flags);
 		if (unlikely(ret <= 0))
 			goto out_release;
@@ -1234,6 +1244,7 @@ ssize_t splice_direct_to_actor(struct file *in, struct splice_desc *sd,
 		 * must not do the output in nonblocking mode as then we
 		 * could get stuck data in the internal pipe:
 		 */
+		/* 处理数据拼接的回调函数direct_splice_actor */
 		ret = actor(pipe, sd);
 		if (unlikely(ret <= 0)) {
 			sd->pos = prev_pos;
@@ -1324,6 +1335,9 @@ long do_splice_direct(struct file *in, loff_t *ppos, struct file *out,
 	if (unlikely(ret < 0))
 		return ret;
 
+	/* ==> 函数栈向下调用
+	 * 拼接是什么意思？
+	 * 最后一个参数用来处理数据拼接 */
 	ret = splice_direct_to_actor(in, &sd, direct_splice_actor);
 	if (ret > 0)
 		*ppos = sd.pos;

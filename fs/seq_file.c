@@ -162,6 +162,16 @@ Eoverflow:
  *
  *	Ready-made ->f_op->read()
  */
+/* 在利用seq来显示vma数据的时候， seq_operations需要注册四个函数：
+ * seq_operations = {
+ *    .start = m_start; -->负责进行初始化
+ *    .next = m_next; --> 负责找到下一个元素(vma)
+ *    .stop = m_stop; --> 停止遍历时的动作
+ *    .show = show_pid_smap --> 读取vma数据的细节。
+ *    通过seq_print来将这些数据传递给seq的buffer
+ * }
+ *
+ * */
 ssize_t seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 {
 	struct seq_file *m = file->private_data;
@@ -184,6 +194,11 @@ ssize_t seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 	 * It is convenient to have it as  part of structure to avoid the
 	 * need of passing another argument to all the seq_file methods.
 	 */
+	/*
+	 * version是seq_file的一个关键参数，能够决定这一次是否拷贝成功。
+	 * seq的缓冲是用到的时候才分配的，读到的数据比当前缓冲剩余大，
+	 * 拷贝就会不成功。这时,version也不会增长。
+	 * */
 	m->version = file->f_version;
 
 	/* Don't assume *ppos is where we left it */
@@ -226,23 +241,30 @@ ssize_t seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 	}
 	/* we need at least one record in buffer */
 	pos = m->index;
+	/* ==> 函数栈向下调用 cat /proc/pid/smaps的案例中，回调m_start */
 	p = m->op->start(m, &pos);
 	while (1) {
 		err = PTR_ERR(p);
 		if (!p || IS_ERR(p))
 			break;
+		/* ==> 函数栈向下调用 show_pid_smap */
 		err = m->op->show(m, p);
 		if (err < 0)
 			break;
 		if (unlikely(err))
 			m->count = 0;
 		if (unlikely(!m->count)) {
+			/* ==> 函数栈向下调用 m_next */
 			p = m->op->next(m, p, &pos);
 			m->index = pos;
 			continue;
 		}
+		/* m->count表示读出来的数据的长度
+		 * m->size表示seq buff的剩余的长度
+		 * */
 		if (m->count < m->size)
 			goto Fill;
+		/* ==> 函数栈向下调用 m_stop */
 		m->op->stop(m, p);
 		kvfree(m->buf);
 		m->count = 0;
