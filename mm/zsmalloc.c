@@ -1008,6 +1008,8 @@ unsigned long zs_malloc(struct zs_pool *pool, size_t size)
 	if (unlikely(!size || size > ZS_MAX_ALLOC_SIZE))
 		return 0;
 
+	/* 根据size获得它对应的“级别”。zspool的内存管理有点像buddy系统，
+	 * 将page分为32到PAGE_SIZE大小"chunks" */
 	class_idx = get_size_class_index(size);
 	class = &pool->size_class[class_idx];
 	BUG_ON(class_idx != class->index);
