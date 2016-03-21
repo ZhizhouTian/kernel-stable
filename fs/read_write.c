@@ -705,6 +705,8 @@ static ssize_t do_loop_readv_writev(struct file *filp, struct iovec *iov,
 		vector++;
 		nr_segs--;
 
+		/* ==> 函数栈向下调用
+		 * seq_read */
 		nr = fn(filp, base, len, ppos);
 
 		if (nr < 0) {
@@ -839,6 +841,7 @@ static ssize_t do_readv_writev(int type, struct file *file,
 		ret = do_sync_readv_writev(file, iov, nr_segs, tot_len,
 						pos, fnv);
 	else
+		/* ==> 函数栈向下调用 */
 		ret = do_loop_readv_writev(file, iov, nr_segs, pos, fn);
 
 	if (type != READ)
@@ -1218,6 +1221,7 @@ static ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
 		if (!(in.file->f_mode & FMODE_PREAD))
 			goto fput_in;
 	}
+	/* 查看是否有对df的操作权限 */
 	retval = rw_verify_area(READ, in.file, &pos, count);
 	if (retval < 0)
 		goto fput_in;
@@ -1263,6 +1267,11 @@ static ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
 		fl = SPLICE_F_NONBLOCK;
 #endif
 	file_start_write(out.file);
+	/* ==>函数栈从这里向下调用。函数原型:
+	 * do_splice_direct(struct file *in, loff_t *ppos, struct file *out,
+	 * 		loff_t *opos, size_t len, unsigned int flags)
+	 * 输入文件，输入文件offset，输出文件，输出文件offset，拼接的byte总数
+	 */
 	retval = do_splice_direct(in.file, &pos, out.file, &out_pos, count, fl);
 	file_end_write(out.file);
 
