@@ -1,0 +1,332 @@
+一， 函数的分析
+0. zsmalloc.c下的全部函数
+
+static int __init zs_init(void)
+static void __exit zs_exit(void)
+
+tatic struct dentry *zs_mount(struct file_system_type *fs_type, int flags, const char *dev_name, void *data)
+
+struct zs_pool *zs_create_pool(const char *name, gfp_t flags)
+void zs_destroy_pool(struct zs_pool *pool)
+
+unsigned long zs_malloc(struct zs_pool *pool, size_t size)
+void zs_free(struct zs_pool *pool, unsigned long handle)
+static unsigned long obj_malloc(struct size_class *class, struct page *first_page, unsigned long handle)
+static void obj_free(struct size_class *class, unsigned long obj)
+
+void *zs_map_object(struct zs_pool *pool, unsigned long handle, enum zs_mapmode mm)
+void zs_unmap_object(struct zs_pool *pool, unsigned long handle)
+static void *__zs_map_object(struct mapping_area *area,  struct page *pages[2], int off, int size)
+static void __zs_unmap_object(struct mapping_area *area, struct page *pages[2], int off, int size)
+int get_first_obj_ofs(struct size_class *class, struct page *first_page, struct page *page)
+
+bool zs_page_isolate(struct page *page, isolate_mode_t mode)
+int zs_page_migrate(struct address_space *mapping, struct page *newpage, struct page *page, enum migrate_mode mode)
+void zs_page_putback(struct page *page)
+
+unsigned long zs_compact(struct zs_pool *pool)
+static void __zs_compact(struct zs_pool *pool, struct size_class *class)
+static unsigned long zs_can_compact(struct size_class *class)
+
+static struct page *isolate_target_page(struct size_class *class)
+static struct page *isolate_source_page(struct size_class *class)
+static int freeze_zspage(struct size_class *class, struct page *first_page)
+static void unfreeze_zspage(struct size_class *class, struct page *first_page, int nr_obj)
+static enum fullness_group putback_zspage(struct size_class *class, struct page *first_page)
+static int migrate_zspage(struct size_class *class, struct page *dst_page, struct page *src_page)
+static unsigned long handle_from_obj(struct size_class *class, struct page *first_page, int obj_idx)
+static void zs_object_copy(struct size_class *class, unsigned long dst, unsigned long src)
+
+static int zs_register_shrinker(struct zs_pool *pool)
+static void zs_unregister_shrinker(struct zs_pool *pool)
+static unsigned long zs_shrinker_count(struct shrinker *shrinker, struct shrink_control *sc)
+static unsigned long zs_shrinker_scan(struct shrinker *shrinker, struct shrink_control *sc)
+
+void zs_pool_stats(struct zs_pool *pool, struct zs_pool_stats *stats)
+
+1. static int __init zs_init(void)
+	zs_register_cpu_notifier
+		__register_cpu_notifier
+			__zs_cpu_up
+		notifier_to_errno
+		init_zs_size_classes //zs_size_classes=0
+		zs_stat_init
+		zs_size_classes == 255, 以供255个级别
+
+2. struct zs_pool *zs_create_pool(const char *name, gfp_t flags)
+echo $((400*1024*1024)) > /sys/block/zram0/disksizd
+el0_svc () --> SyS_write --> SYSC_write --> vfs_write --> __vfs_write --> kernfs_fop_write -->
+sysfs_kf_write --> dev_attr_store --> zram_meta_alloc -->
+   zs_create_pool(name=0xffffffc036eb780c "zram0", flags=0x240000A) EXPORT_SYMBOL_GPL
+	pool->size_class = kcalloc(zs_size_classes, sizeof(struct size_class *),GFP_KERNEL); //zs_size_classes == 255
+	pool->name = kstrdup(name, GFP_KERNEL); // name == "zram0"
+	create_handle_cache // create a kmem cache named "zs_handle"，就是一内存池，可以不断的拿出来long，用于记录obj handle
+		pool->handle_cachep = kmem_cache_create("zs_handle", ZS_HANDLE_SIZE, 0, 0, NULL);
+	for (i = zs_size_classes - 1; i >= 0; i--) { // zs_size_classes == 255
+		size = ZS_MIN_ALLOC_SIZE + i * ZS_SIZE_CLASS_DELTA; // 8 + i * (PAGE_SIZE >> 8)
+		pages_per_zspage = get_pages_per_zspage(size); //根据size获得页的个数
+		struct size_class *class = kzalloc(sizeof(struct size_class), GFP_KERNEL);
+		class->size = size; //class的size属性就是"格子"的大小
+	pool->inode->i_mapping->a_ops = &zsmalloc_aops;
+	pool->inode->i_mapping->private_data = pool;
+	zs_register_shrinker
+		pool->shrinker.scan_objects = zs_shrinker_scan;
+		pool->shrinker.count_objects = zs_shrinker_count;
+
+3. unsigned long zs_malloc(struct zs_pool *pool, size_t size)
+/* zs_malloc的被调用到的路径 */
+mkswap /dev/zram0
+el0_svc --> SyS_fsync --> do_fsync --> vfs_fsync --> vfs_fsync_range --> blkdev_fsync -->
+filemap_write_and_wait_range --> __filemap_fdatawrite_range --> do_writepages --> 
+blkdev_writepages --> generic_writepages --> write_cache_pages --> __writepage -->
+blkdev_writepage --> block_write_full_page --> __block_write_full_page --> submit_bh_wbc -->
+submit_bio --> generic_make_request --> __zram_make_request --> zram_bvec_rw -->
+zram_bvec_write -->
+或者
+do_page_fault --> handle_mm_fault --> handle_pte_fault --> do_anonymous_page --> alloc_pages_node --> __alloc_pages_slowpath
+--> try_to_free_pages --> shrink_zone_memcg --> shrink_list --> shrink_inactive_list --> shrink_page_list --> pageout -->
+swap_writepage --> bdev_write_page --> zram_rw_page --> zram_bvec_rw --> zram_bvec_write --> zs_malloc
+   zs_malloc(struct zs_pool *pool, size_t size) // pool = 0xffffffc036b43a80, size = 2693
+	handle = alloc_handle(pool) // 从内存池里分配一个long出来,用于记录obj handle
+		return kmem_cache_alloc(pool->handle_cachep, pool->flags);
+	get_size_class_index(size) //结果是((size+ZS_SIZE_CLASS_DELTA)-1)/ZS_SIZE_CLASS_DELTA
+	first_page = find_get_zspage(class);
+		page = class->fullness_list[i]; //返回page*，注意是指针
+	if (!first_page) : first_page = alloc_zspage(pool, class)
+		for (i = 0; i < class->pages_per_zspage; i++)
+			page = alloc_page(pool->flags);
+		create_page_chain(pages, class->pages_per_zspage);
+			如果是第一个页，则通过SetPagePrivate设置为first_page
+			如果是最后一页，则通过SetPagePrivate2设置为last_page
+			如果是其他页，则他们的page->private存放第一个页指针
+				且((struct zs_meta*)page->index)->next等于下一个page
+		init_zspage(class, first_page, pool->inode->i_mapping);
+			//在zs_create_pool中，pool->inode->i_mapping->a_ops = &zsmalloc_aops;它的->private_data = pool;
+			INIT_LIST_HEAD(&first_page->lru); //用作?
+			first_page->freelist = NULL;      //
+			set_zspage_inuse(first_page, 0);  // ((struct zs_meta *)&first_page->freelist)->inuse = 0;
+			while (page) // page = first_page
+				__SetPageMovable(page);
+					__set_bit(PG_movable, &page->flags);
+					atomic_set(&page->_mapcount, -256); //_mapcount是int,为什么设置为-256？
+				vaddr = kmap_atomic(page);//为什么要虚拟地址呢？因为CPU只能访问虚拟地址
+					return page_address(page); //返回page所对应的虚拟地址
+				link = (struct link_free *)vaddr + off / sizeof(*link);
+				while ((off += class->size) < PAGE_SIZE) //class->size应该是obj大小
+					link->next = freeobj++ << OBJ_ALLOCATED_TAG; //用第0位表示锁
+					link += class->size / sizeof(*link);
+				next_page = get_next_page(page);
+					如果不是第一页和最和一页则返回(struct zs_meta *)&page->index->next
+				kunmap_atomic(vaddr);
+				off %= PAGE_SIZE;
+		set_freeobj(first_page, 0); //设置当前可用的object的index为0
+			((struct zs_meta *)&first_page->freelist)->freeobj = idx; //0
+	set_zspage_mapping(first_page, class->index, ZS_EMPTY);
+		((struct zs_meta *)&first_page->freelist)->fullness = ZS_EMPTY; // 初始为空的object
+		((struct zs_meta *)&first_page->freelist)->class = class->index;// class的index表示其id
+	obj = obj_malloc(class, first_page, handle); //
+		unsigned long obj = get_freeobj(first_page);
+			return ((struct zs_meta *)&first_page->freelist)->freeobj
+		objidx_to_page_and_offset(class, first_page, obj, &m_page, &m_offset);
+			//通过class->size * obj获得offset，并得知它在第几个页。返回这个页(m_page)及页内偏移(m_offset)
+		vaddr = kmap_atomic(m_page);
+		if (!class->huge) //物理页上的obj第一个long，存放的是其handle在pool->cachep中的位置
+			link->handle = handle | OBJ_ALLOCATED_TAG;
+		else set_page_private(first_page, handle | OBJ_ALLOCATED_TAG);
+		mod_zspage_inuse(first_page, 1);
+			((struct zs_meta *)&first_page->freelist)->insue += 1
+		return location_to_obj(m_page, obj); //返回一个编码，格式：pfn + obj_idx + tag(锁)
+	fix_fullness_group(class, first_page);
+		//获得原有的组，测试并获得当前的组，如果一样就返回，不一样就设置
+	record_obj(handle, obj); //把obj存放到handle中
+	return handle;
+
+
+4. void *zs_map_object(struct zs_pool *pool, unsigned long handle, enum zs_mapmode mm)
+static void *__zs_map_object(struct mapping_area *area,  struct page *pages[2], int off, int size)
+函数调用栈与zs_malloc类似，zram_bvec_write --> zs_map_object。这个函数作用：
+从zs_malloc得到page之后，是没法直接使用的（CPU不能直接访问物理地址，必须经过映射）。
+该函数的作用就是映射。在使用完毕之后会进行unmap。每个CPU同一时刻只能映射一个object
+   zs_map_object(pool=0xffffffc036f61e80, size=76) EXPORT_SYMBOL_GPL
+	BUG_ON(in_interrupt()); // 不能在中断里？可能使用了每cpu的mapping area，所以不能在中断中执行，否则其他人就没法mapping
+	pin_tag(handle); // 尝试获得object的锁
+	obj_to_location(obj, &page, &obj_idx); //obj==handle，这里是得到obj所在的page和页内偏移
+	// 通过kamp_atomic来获得page的虚拟地址并根据页内偏移返回obj的虚拟地址
+	// 如果obj横跨两个页，则要调用__zs_map_object将两个页中的obj拷贝到per cpu mapping area
+
+5. zs_page_isolate:
+echo 1 > /proc/sys/vm/compact_memory
+el0_svc --> SyS_write  --> SYSC_write  --> vfs_write __vfs_write  -->
+proc_sys_write proc_sys_call_handler  --> sysctl_compaction_handler  -->
+compact_nodes  --> compact_node  --> __compact_pgdat  --> compact_zone  -->
+isolate_migratepages  --> isolate_migratepages_block  --> isolate_movable_page
+zs_page_isolate (page=0xffffffbdc0000000, mode=8)
+	struct page * first_page = get_first_page(page);
+	get_zspage_mapping(first_page, &class_idx, &fullness); // 通过first_page来获得class id和fullness
+	remove_zspage(class, fullness, first_page);
+		head = &class->fullness_list[fullness];
+		*head = (struct page *)list_entry((*head)->lru.next, struct page, lru);// 没明白
+	list_del_init(&first_page->lru); //删除了所有元素并重新init列表?
+
+6. zs_page_migrate
+newpage的来源根据模块会有不同，是由一个传入参数函数分配的，从lru上拿来一个page
+el0_svc --> SyS_write  --> SYSC_write  --> vfs_write __vfs_write  -->
+proc_sys_write proc_sys_call_handler  --> sysctl_compaction_handler  -->
+compact_nodes  --> compact_node  --> __compact_pgdat  --> compact_zone  -->
+migrate_pages --> unmap_and_move --> __unmap_and_move --> move_to_new_page
+注意，在该函数调用之前,newpage貌似就被lock了，函数最后会unlock
+zs_page_migrate (mapping=0xffffffc0396d3850, newpage=0xffffffbdc0516080, page=0xffffffbdc0001880, mode=MIGRATE_SYNC)
+	pool = page->mapping->private_data;
+	class = pool->size_class[class_idx];
+	int freezed = freeze_zspage(class, first_page); //冻结zspage中所有的object, obj不能再被free
+		for (obj_idx = 0; obj_idx < class->objs_per_zspage; obj_idx++)
+			objidx_to_page_and_offset(class, first_page, obj_idx, &obj_page, &offset); //根据objid得到所在page
+			void *addr = kmap_atomic(obj_page); // 映射obj所在的page
+			unsigned head = obj_to_head(class, obj_page, addr + offset); //head = addr + offset
+			if (head & OBJ_ALLOCATED_TAG)
+				trypin_tag(handle)
+					test_and_set_bit_lock(HANDLE_PIN_BIT, ptr); //加锁
+				nr_freeze++;
+		return nr_freeze;
+	if (freezed != get_zspage_inuse(first_page))
+		goto out_unfreeze;// 需要使用中的obj和冻结的obj数目不一致
+	s_addr = kmap_atomic(page);
+	d_addr = kmap_atomic(newpage);
+	memcpy(d_addr, s_addr, PAGE_SIZE);//从原来的页拷贝到新的页中
+	int  offset = get_first_obj_ofs(class, first_page, page); //得到第一个obj在原始页中的offset
+	void *addr = kmap_atomic(page);
+	do {
+		unsigned head = obj_to_head(class, page, addr + offset);//head = *(addr + offset)
+		unsigned handle = head & ~OBJ_ALLOCATED_TAG; //head去掉最后一位就是这个obj的handle的地址
+		testpin_tag(handle);
+		old_obj = handle_to_obj(handle); // handle是由pfn和obj_idx组成的
+		obj_to_location(old_obj, &dummy, &obj_idx); //获得源obj的idx，丢弃pfn
+		new_obj = location_to_obj(newpage, obj_idx); //用新的pfn和源idx及PIN_BIT合成handle
+		record_obj(handle, new_obj); //将新的handle写入到zs_pool下的kmem_cache中
+		offset += class->size; //class->size的大小都是固定的，表示obj的大小
+	}while ((offset < PAGE_SIZE);
+	kunmap_atomic(addr);
+	replace_sub_page(class, first_page, newpage, page); //在page_chain中将旧页替换为新页
+		struct page *pages[ZS_MAX_PAGES_PER_ZSPAGE] = {NULL,};
+		struct page *page = first_page;
+		do {//获得一个zs_page中的所有page，并将oldpage替换为newpage
+			if (page == oldpage) pages[idx++] = newpage;
+			else pages[idx++] = page;
+		} while ((page = get_next_page(page)) != NULL);
+		create_page_chain(pages, class->pages_per_zspage); //重新创建zs_page的page chain
+		if (is_first_page(oldpage)) { //如果替换的是first_page则要作更多工作
+			enum fullness_group fg; int class_idx;
+			SetZsPageIsolate(newpage); //新的page仍然处于隔离状态
+			get_zspage_mapping(oldpage, &class_idx, &fg);
+				struct zs_meta *m = (struct zs_meta *)&first_page->freelist;
+				*fullness = m->fullness; // fg，源zspage处于的fullness
+				*class_idx = m->class;   // class_idx处于的class id
+			set_zspage_mapping(newpage, class_idx, fg);          //设置新的page的组和classid
+			set_freeobj(newpage, get_freeobj(oldpage));          //设置free_obj的idx
+			set_zspage_inuse(newpage, get_zspage_inuse(oldpage));//设置新的page的使用中的obj的个数
+			if (class->huge) set_page_private(newpage,  page_private(oldpage));
+		}
+		newpage->mapping = oldpage->mapping;
+		__SetPageMovable(newpage);
+	first_page = get_first_page(newpage);
+	get_page(newpage); //增加page的计数以防被回收
+	reset_page(page);  //结束migrate，重置源page
+	ClearPageIsolated(page);
+	put_page(page);
+	page = newpage;
+	unfreeze_zspage(class, first_page, freezed);
+	unlock_zspage(first_page, page);
+	spin_unlock(&class->lock);
+
+
+7. zs_compact
+zs_shrinker_scan --> compact_store -->
+unsigned long zs_compact(struct zs_pool *pool)
+	for (i = zs_size_classes - 1; i >= 0; i--) // zs_size_classes就是size_class的数目,以数组形式存在于zs_pool
+		__zs_compact(pool, class)
+			while ((src_page = isolate_source_page(class))) //获得src page，先隔离起来
+				if (!zs_can_compact(class)) // 查找有多少个obj未用，再乘以每个obj占用的page数目
+				isolate_target_page(class)
+					remove_zspage(page, class, i)//如果满足条件，则从隔离class中删除该class（不隔离）
+				migrate_zspage(pool, class, &cc)
+					zs_object_copy(free_obj, used_obj, class)
+					obj_free(pool, class, used_obj)
+				putback_zspage(pool, class, dst_page)
+
+
+二 数据结构的分析
+struct zs_pool {
+	const char *name;
+
+	struct size_class **size_class;
+	struct kmem_cache *handle_cachep;
+
+	gfp_t flags;	/* allocation flags used when growing pool */
+	atomic_long_t pages_allocated;
+
+	struct zs_pool_stats stats;
+
+	/* Compact classes */
+	struct shrinker shrinker;
+	/*
+	 * To signify that register_shrinker() was successful
+	 * and unregister_shrinker() will not Oops.
+	 */
+	bool shrinker_enabled;
+#ifdef CONFIG_ZSMALLOC_STAT
+	struct dentry *stat_dentry;
+#endif
+}
+
+struct size_class {
+	spinlock_t lock;
+	struct page *fullness_list[_ZS_NR_FULLNESS_GROUPS];
+	/*
+	 * Size of objects stored in this class. Must be multiple
+	 * of ZS_ALIGN.
+	 */
+	int size;
+	unsigned int index;
+
+	struct zs_size_stat stats;
+
+	/* Number of PAGE_SIZE sized pages to combine to form a 'zspage' */
+	int pages_per_zspage;
+	/* huge object: pages_per_zspage == 1 && maxobj_per_zspage == 1 */
+	bool huge;
+}
+
+struct kmem_cache {
+	struct kmem_cache_cpu __percpu *cpu_slab;
+	/* Used for retriving partial slabs etc */
+	unsigned long flags;
+	unsigned long min_partial;
+	int size;               /* The size of an object including meta data */
+	int object_size;        /* The size of an object without meta data */
+	int offset;             /* Free pointer offset. */
+	int cpu_partial;        /* Number of per cpu partial objects to keep around */
+	struct kmem_cache_order_objects oo;
+
+	/* Allocation and freeing of slabs */
+	struct kmem_cache_order_objects max;
+	struct kmem_cache_order_objects min;
+	gfp_t allocflags;       /* gfp flags to use on each alloc */
+	int refcount;           /* Refcount for slab cache destroy */
+	void (*ctor)(void *);
+	int inuse;              /* Offset to metadata */
+	int align;              /* Alignment */
+	int reserved;           /* Reserved bytes at the end of slabs */
+	const char *name;       /* Name (only for display!) */
+	struct list_head list;  /* List of slab caches */
+	int red_left_pad;       /* Left redzone padding size */
+#ifdef CONFIG_SYSFS
+	struct kobject kobj;    /* For sysfs */
+#endif
+	struct kmem_cache_node *node[MAX_NUMNODES];
+};
+
+struct zs_pool_stats {
+	/* How many pages were migrated (freed) */
+	unsigned long pages_compacted;
+};
+
