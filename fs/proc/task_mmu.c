@@ -262,6 +262,21 @@ static pid_t pid_of_stack(struct proc_maps_private *priv,
 	return ret;
 }
 
+static inline void show_task_mm_vma(struct task_struct *task,
+		struct mm_struct *mm, struct vm_area_struct *vma)
+{
+	unsigned long max_stack, range_limit;
+
+	max_stack = rlimit(RLIMIT_STACK);
+
+	range_limit = mm->start_stack - max_stack - 1;
+
+	pr_emerg("zhizhou: pid:%d stack(%lx-%lx) vma(%lx-%lx) heap(%lx-%lx).\n",
+			task->pid, mm->start_stack, range_limit,
+			vma->vm_start, vma->vm_end,
+			mm->start_brk, mm->brk);
+}
+
 static void
 show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 {
@@ -328,6 +343,7 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 
 		if (vma->vm_start <= mm->brk &&
 		    vma->vm_end >= mm->start_brk) {
+			show_task_mm_vma(priv->task, mm, vma);
 			name = "[heap]";
 			goto done;
 		}
