@@ -147,7 +147,7 @@ static inline void ClearPage##uname(struct page *page)			\
 
 #define __SETPAGEFLAG(uname, lname)					\
 static inline void __SetPage##uname(struct page *page)			\
-			{ __set_bit(PG_##lname, &page->flags); }
+			{flag __set_bit(PG_##lname, &page->flags); }
 
 #define __CLEARPAGEFLAG(uname, lname)					\
 static inline void __ClearPage##uname(struct page *page)		\
@@ -451,6 +451,28 @@ static inline int PageTransTail(struct page *page)
 	return 0;
 }
 #endif
+
+#define PAGE_MOVABLE_MAPCOUNT_VALUE (-256)
+#define PAGE_BALLOON_MAPCOUNT_VALUE PAGE_MOVABLE_MAPCOUNT_VALUE
+
+static inline int PageMovable(struct page *page)
+{
+	return (test_bit(PG_movable, &(page)->flags) &&
+		atomic_read(&page->_mapcount) == PAGE_MOVABLE_MAPCOUNT_VALUE);
+}
+
+/* Caller should hold a PG_lock */
+static inline void __SetPageMovable(struct page *page)
+{
+	__set_bit(PG_movable, &page->flags);
+	atomic_set(&page->_mapcount, PAGE_MOVABLE_MAPCOUNT_VALUE);
+}
+
+static inline void __ClearPageMovable(struct page *page)
+{
+	atomic_set(&page->_mapcount, -1);
+	__clear_bit(PG_movable, &(page)->flags);
+}
 
 /*
  * If network-based swap is enabled, sl*b must keep track of whether pages
