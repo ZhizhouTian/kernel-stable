@@ -126,6 +126,10 @@ enum pageflags {
 
 	/* SLOB */
 	PG_slob_free = PG_private,
+
+	/* non-lru movable pages */
+	PG_movable = PG_reclaim,
+	PG_isolated = PG_owner_priv_1,
 };
 
 #ifndef __GENERATING_BOUNDS_H
@@ -524,6 +528,30 @@ static inline int page_has_private(struct page *page)
 {
 	return !!(page->flags & PAGE_FLAGS_PRIVATE);
 }
+
+#define PAGE_MOVABLE_MAPCOUNT_VALUE (-256)
+#define PAGE_BALLOON_MAPCOUNT_VALUE PAGE_MOVABLE_MAPCOUNT_VALUE
+
+static inline int PageMovable(struct page *page)
+{
+	return (test_bit(PG_movable, &(page)->flags) &&
+			atomic_read(&page->_mapcount) == PAGE_MOVABLE_MAPCOUNT_VALUE);
+}
+
+/* Caller should hold a PG_lock */
+static inline void __SetPageMovable(struct page *page)
+{
+	__set_bit(PG_movable, &page->flags);
+	atomic_set(&page->_mapcount, PAGE_MOVABLE_MAPCOUNT_VALUE);
+}
+
+static inline void __ClearPageMovable(struct page *page)
+{
+	atomic_set(&page->_mapcount, -1);
+	__clear_bit(PG_movable, &(page)->flags);
+}
+
+PAGEFLAG(Isolated, isolated);
 
 #endif /* !__GENERATING_BOUNDS_H */
 

@@ -43,6 +43,7 @@ extern int migrate_pages(struct list_head *l, new_page_t x,
 		unsigned long private, enum migrate_mode mode, int reason);
 extern int migrate_huge_page(struct page *, new_page_t x,
 		unsigned long private, enum migrate_mode mode);
+extern bool isolate_movable_page(struct page *page);
 
 extern int fail_migrate_page(struct address_space *,
 			struct page *, struct page *);

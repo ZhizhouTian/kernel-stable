@@ -455,7 +455,7 @@ static bool too_many_isolated(struct zone *zone)
  * (or read for that matter) cc->migrate_pfn.
  */
 unsigned long
-isolate_migratepages_range(struct zone *zone, struct compact_control *cc,
+__attribute__((optimize("O0"))) isolate_migratepages_range(struct zone *zone, struct compact_control *cc,
 		unsigned long low_pfn, unsigned long end_pfn, bool unevictable)
 {
 	unsigned long last_pageblock_nr = 0, pageblock_nr;
@@ -466,6 +466,7 @@ isolate_migratepages_range(struct zone *zone, struct compact_control *cc,
 	unsigned long flags;
 	bool locked = false;
 	struct page *page = NULL, *valid_page = NULL;
+	extern struct address_space zsmalloc_mapping;
 
 	/*
 	 * Ensure that there are not too many pages isolated from the LRU
@@ -550,6 +551,14 @@ isolate_migratepages_range(struct zone *zone, struct compact_control *cc,
 		 * Skip any other type of page
 		 */
 		if (!PageLRU(page)) {
+			if (page->mapping == &zsmalloc_mapping) {
+				list_add(&page->lru, migratelist);
+				cc->nr_migratepages++;
+				nr_isolated++;
+				isolate_movable_page(page);
+				goto check_compact_cluster;
+			}
+
 			if (unlikely(balloon_page_movable(page))) {
 				if (locked && balloon_page_isolate(page)) {
 					/* Successfully isolated */
