@@ -78,6 +78,8 @@
 #include <linux/hardirq.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
+#include <linux/pagemap.h>
+#include <linux/page-flags.h>
 
 #include "zsmalloc.h"
 
@@ -559,6 +561,21 @@ static void free_zspage(struct page *first_page)
 	__free_page(head_extra);
 }
 
+int zs_page_migrate(struct address_space *mapping, struct page *newpage,
+		struct page *page, enum migrate_mode mode)
+{
+	pr_info ("zhizhou.tian(zs_page_migrate).\n");
+	return 0;
+}
+
+const struct address_space_operations zsmalloc_aops = {
+	.migratepage = zs_page_migrate,
+};
+
+struct address_space zsmalloc_mapping = {
+	.a_ops = &zsmalloc_aops,
+};
+
 /* Initialize a newly allocated zspage */
 static void init_zspage(struct page *first_page, struct size_class *class)
 {
@@ -571,6 +588,11 @@ static void init_zspage(struct page *first_page, struct size_class *class)
 		struct page *next_page;
 		struct link_free *link;
 		void *vaddr;
+
+		BUG_ON(!trylock_page(page));
+		page->mapping = &zsmalloc_mapping;
+		__SetPageMovable(page);
+		unlock_page(page);
 
 		/*
 		 * page->index stores offset of first object starting
