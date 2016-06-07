@@ -1,0 +1,109 @@
+drivers/staging/zram/Makefile:zram-y	:=	zram_drv.o zram_sysfs.o
+drivers/staging/zram/zram_drv.c:	spin_lock(&zram->stat64_lock);
+drivers/staging/zram/zram_drv.c:	spin_unlock(&zram->stat64_lock);
+drivers/staging/zram/zram_drv.c:	spin_lock(&zram->stat64_lock);
+drivers/staging/zram/zram_drv.c:	spin_unlock(&zram->stat64_lock);
+drivers/staging/zram/zram_drv.c:	struct zram_meta *meta = zram->meta;
+drivers/staging/zram/zram_drv.c:			zram->stats.pages_zero--;
+drivers/staging/zram/zram_drv.c:		zram->stats.bad_compress--;
+drivers/staging/zram/zram_drv.c:		zram->stats.good_compress--;
+drivers/staging/zram/zram_drv.c:	zram_stat64_sub(zram, &zram->stats.compr_size,
+drivers/staging/zram/zram_drv.c:	zram->stats.pages_stored--;
+drivers/staging/zram/zram_drv.c:	struct zram_meta *meta = zram->meta;
+drivers/staging/zram/zram_drv.c:		zram_stat64_inc(zram, &zram->stats.failed_reads);
+drivers/staging/zram/zram_drv.c:	struct zram_meta *meta = zram->meta;
+drivers/staging/zram/zram_drv.c:	struct zram_meta *meta = zram->meta;
+drivers/staging/zram/zram_drv.c:		zram->stats.pages_zero++;
+drivers/staging/zram/zram_drv.c:		zram->stats.bad_compress++;
+drivers/staging/zram/zram_drv.c:	zram_stat64_add(zram, &zram->stats.compr_size, clen);
+drivers/staging/zram/zram_drv.c:	zram->stats.pages_stored++;
+drivers/staging/zram/zram_drv.c:		zram->stats.good_compress++;
+drivers/staging/zram/zram_drv.c:		zram_stat64_inc(zram, &zram->stats.failed_writes);
+drivers/staging/zram/zram_drv.c:		down_read(&zram->lock);
+drivers/staging/zram/zram_drv.c:		up_read(&zram->lock);
+drivers/staging/zram/zram_drv.c:		down_write(&zram->lock);
+drivers/staging/zram/zram_drv.c:		up_write(&zram->lock);
+drivers/staging/zram/zram_drv.c:		zram_stat64_inc(zram, &zram->stats.num_reads);
+drivers/staging/zram/zram_drv.c:		zram_stat64_inc(zram, &zram->stats.num_writes);
+drivers/staging/zram/zram_drv.c:	bound = zram->disksize >> SECTOR_SHIFT;
+drivers/staging/zram/zram_drv.c:	down_read(&zram->init_lock);
+drivers/staging/zram/zram_drv.c:	if (unlikely(!zram->init_done))
+drivers/staging/zram/zram_drv.c:		zram_stat64_inc(zram, &zram->stats.invalid_io);
+drivers/staging/zram/zram_drv.c:	up_read(&zram->init_lock);
+drivers/staging/zram/zram_drv.c:	up_read(&zram->init_lock);
+drivers/staging/zram/zram_drv.c:	if (!zram->init_done)
+drivers/staging/zram/zram_drv.c:	meta = zram->meta;
+drivers/staging/zram/zram_drv.c:	zram->init_done = 0;
+drivers/staging/zram/zram_drv.c:	for (index = 0; index < zram->disksize >> PAGE_SHIFT; index++) {
+drivers/staging/zram/zram_drv.c:	zram_meta_free(zram->meta);
+drivers/staging/zram/zram_drv.c:	zram->meta = NULL;
+drivers/staging/zram/zram_drv.c:	memset(&zram->stats, 0, sizeof(zram->stats));
+drivers/staging/zram/zram_drv.c:	zram->disksize = 0;
+drivers/staging/zram/zram_drv.c:	set_capacity(zram->disk, 0);
+drivers/staging/zram/zram_drv.c:	down_write(&zram->init_lock);
+drivers/staging/zram/zram_drv.c:	up_write(&zram->init_lock);
+drivers/staging/zram/zram_drv.c:	if (zram->disksize > 2 * (totalram_pages << PAGE_SHIFT)) {
+drivers/staging/zram/zram_drv.c:		(totalram_pages << PAGE_SHIFT) >> 10, zram->disksize >> 10
+drivers/staging/zram/zram_drv.c:	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, zram->disk->queue);
+drivers/staging/zram/zram_drv.c:	zram->meta = meta;
+drivers/staging/zram/zram_drv.c:	zram->init_done = 1;
+drivers/staging/zram/zram_drv.c:	down_write(&zram->lock);
+drivers/staging/zram/zram_drv.c:	up_write(&zram->lock);
+drivers/staging/zram/zram_drv.c:	zram_stat64_inc(zram, &zram->stats.notify_free);
+drivers/staging/zram/zram_drv.c:	init_rwsem(&zram->lock);
+drivers/staging/zram/zram_drv.c:	init_rwsem(&zram->init_lock);
+drivers/staging/zram/zram_drv.c:	spin_lock_init(&zram->stat64_lock);
+drivers/staging/zram/zram_drv.c:	zram->queue = blk_alloc_queue(GFP_KERNEL);
+drivers/staging/zram/zram_drv.c:	if (!zram->queue) {
+drivers/staging/zram/zram_drv.c:	blk_queue_make_request(zram->queue, zram_make_request);
+drivers/staging/zram/zram_drv.c:	zram->queue->queuedata = zram;
+drivers/staging/zram/zram_drv.c:	zram->disk = alloc_disk(1);
+drivers/staging/zram/zram_drv.c:	if (!zram->disk) {
+drivers/staging/zram/zram_drv.c:	zram->disk->major = zram_major;
+drivers/staging/zram/zram_drv.c:	zram->disk->first_minor = device_id;
+drivers/staging/zram/zram_drv.c:	zram->disk->fops = &zram_devops;
+drivers/staging/zram/zram_drv.c:	zram->disk->queue = zram->queue;
+drivers/staging/zram/zram_drv.c:	zram->disk->private_data = zram;
+drivers/staging/zram/zram_drv.c:	snprintf(zram->disk->disk_name, 16, "zram%d", device_id);
+drivers/staging/zram/zram_drv.c:	set_capacity(zram->disk, 0);
+drivers/staging/zram/zram_drv.c:	blk_queue_physical_block_size(zram->disk->queue, PAGE_SIZE);
+drivers/staging/zram/zram_drv.c:	blk_queue_logical_block_size(zram->disk->queue,
+drivers/staging/zram/zram_drv.c:	blk_queue_io_min(zram->disk->queue, PAGE_SIZE);
+drivers/staging/zram/zram_drv.c:	blk_queue_io_opt(zram->disk->queue, PAGE_SIZE);
+drivers/staging/zram/zram_drv.c:	add_disk(zram->disk);
+drivers/staging/zram/zram_drv.c:	ret = sysfs_create_group(&disk_to_dev(zram->disk)->kobj,
+drivers/staging/zram/zram_drv.c:	zram->init_done = 0;
+drivers/staging/zram/zram_drv.c:	del_gendisk(zram->disk);
+drivers/staging/zram/zram_drv.c:	put_disk(zram->disk);
+drivers/staging/zram/zram_drv.c:	blk_cleanup_queue(zram->queue);
+drivers/staging/zram/zram_drv.c:	sysfs_remove_group(&disk_to_dev(zram->disk)->kobj,
+drivers/staging/zram/zram_drv.c:	if (zram->disk) {
+drivers/staging/zram/zram_drv.c:		del_gendisk(zram->disk);
+drivers/staging/zram/zram_drv.c:		put_disk(zram->disk);
+drivers/staging/zram/zram_drv.c:	if (zram->queue)
+drivers/staging/zram/zram_drv.c:		blk_cleanup_queue(zram->queue);
+drivers/staging/zram/zram_drv.c:		get_disk(zram->disk);
+drivers/staging/zram/zram_drv.c:		put_disk(zram->disk);
+drivers/staging/zram/zram_sysfs.c:	spin_lock(&zram->stat64_lock);
+drivers/staging/zram/zram_sysfs.c:	spin_unlock(&zram->stat64_lock);
+drivers/staging/zram/zram_sysfs.c:		if (disk_to_dev(zram->disk) == dev)
+drivers/staging/zram/zram_sysfs.c:	return sprintf(buf, "%llu\n", zram->disksize);
+drivers/staging/zram/zram_sysfs.c:	down_write(&zram->init_lock);
+drivers/staging/zram/zram_sysfs.c:	if (zram->init_done) {
+drivers/staging/zram/zram_sysfs.c:		up_write(&zram->init_lock);
+drivers/staging/zram/zram_sysfs.c:	zram->disksize = disksize;
+drivers/staging/zram/zram_sysfs.c:	set_capacity(zram->disk, zram->disksize >> SECTOR_SHIFT);
+drivers/staging/zram/zram_sysfs.c:	up_write(&zram->init_lock);
+drivers/staging/zram/zram_sysfs.c:	return sprintf(buf, "%u\n", zram->init_done);
+drivers/staging/zram/zram_sysfs.c:	bdev = bdget_disk(zram->disk, 0);
+drivers/staging/zram/zram_sysfs.c:		zram_stat64_read(zram, &zram->stats.num_reads));
+drivers/staging/zram/zram_sysfs.c:		zram_stat64_read(zram, &zram->stats.num_writes));
+drivers/staging/zram/zram_sysfs.c:		zram_stat64_read(zram, &zram->stats.invalid_io));
+drivers/staging/zram/zram_sysfs.c:		zram_stat64_read(zram, &zram->stats.notify_free));
+drivers/staging/zram/zram_sysfs.c:	return sprintf(buf, "%u\n", zram->stats.pages_zero);
+drivers/staging/zram/zram_sysfs.c:		(u64)(zram->stats.pages_stored) << PAGE_SHIFT);
+drivers/staging/zram/zram_sysfs.c:		zram_stat64_read(zram, &zram->stats.compr_size));
+drivers/staging/zram/zram_sysfs.c:	struct zram_meta *meta = zram->meta;
+drivers/staging/zram/zram_sysfs.c:	down_read(&zram->init_lock);
+drivers/staging/zram/zram_sysfs.c:	if (zram->init_done)
+drivers/staging/zram/zram_sysfs.c:	up_read(&zram->init_lock);
