@@ -87,6 +87,74 @@ void putback_lru_pages(struct list_head *l)
 	}
 }
 
+bool isolate_movable_page(struct page *page)
+{
+	bool ret = false;
+
+	/*
+	 * Avoid burning cycles with pages that are yet under __free_pages(),
+	 * or just got freed under us.
+	 *
+	 * In case we 'win' a race for a movable page being freed under us and
+	 * raise its refcount preventing __free_pages() from doing its job
+	 * the put_page() at the end of this block will take care of
+	 * release this page, thus avoiding a nasty leakage.
+	 */
+	if (unlikely(!get_page_unless_zero(page)))
+		goto out;
+
+	/*
+	 * As movable pages are not isolated from LRU lists, concurrent
+	 * compaction threads can race against page migration functions
+	 * as well as race against the releasing a page.
+	 *
+	 * In order to avoid having an already isolated movable page
+	 * being (wrongly) re-isolated while it is under migration,
+	 * or to avoid attempting to isolate pages being released,
+	 * lets be sure we have the page lock
+	 * before proceeding with the movable page isolation steps.
+	 */
+	if (unlikely(!trylock_page(page)))
+		goto out_putpage;
+
+	if (!PageMovable(page) || PageIsolated(page))
+		goto out_no_isolated;
+
+	ret = page->mapping->a_ops->isolate_page(page);
+	if (!ret)
+		goto out_no_isolated;
+
+	WARN_ON_ONCE(!PageIsolated(page));
+	unlock_page(page);
+	return ret;
+
+out_no_isolated:
+	unlock_page(page);
+out_putpage:
+	put_page(page);
+out:
+	return ret;
+}
+
+void putback_movable_page(struct page *page)
+{
+	struct address_space *mapping;
+
+	/*
+	 * 'lock_page()' stabilizes the page and prevents races against
+	 * concurrent isolation threads attempting to re-isolate it.
+	 */
+	lock_page(page);
+	mapping = page_mapping(page);
+	if (mapping) {
+		mapping->a_ops->putback_page(page);
+		WARN_ON_ONCE(PageIsolated(page));
+	}
+	unlock_page(page);
+	/* drop the extra ref count taken for movable page isolation */
+	put_page(page);
+}
+
 /*
  * Put previously isolated pages back onto the appropriate lists
  * from where they were once taken off for compaction/migration.
@@ -98,11 +166,15 @@ void putback_movable_pages(struct list_head *l)
 {
 	struct page *page;
 	struct page *page2;
+	extern struct address_space zsmalloc_mapping;
 
 	list_for_each_entry_safe(page, page2, l, lru) {
 		list_del(&page->lru);
 		dec_zone_page_state(page, NR_ISOLATED_ANON +
 				page_is_file_cache(page));
+		if (page->mapping == &zsmalloc_mapping)
+			continue;
+
 		if (unlikely(isolated_balloon_page(page)))
 			balloon_page_putback(page);
 		else
@@ -665,7 +737,7 @@ static int fallback_migrate_page(struct address_space *mapping,
  *   < 0 - error code
  *  MIGRATEPAGE_SUCCESS - success
  */
-static int move_to_new_page(struct page *newpage, struct page *page,
+static __attribute__((optimize("O0"))) int move_to_new_page(struct page *newpage, struct page *page,
 				int remap_swapcache, enum migrate_mode mode)
 {
 	struct address_space *mapping;
@@ -713,7 +785,7 @@ static int move_to_new_page(struct page *newpage, struct page *page,
 	return rc;
 }
 
-static int __unmap_and_move(struct page *page, struct page *newpage,
+static __attribute__((optimize("O0"))) int __unmap_and_move(struct page *page, struct page *newpage,
 				int force, enum migrate_mode mode)
 {
 	int rc = -EAGAIN;
@@ -859,17 +931,19 @@ out:
  * Obtain the lock on page, remove all ptes and migrate the page
  * to the newly allocated page in newpage.
  */
-static int unmap_and_move(new_page_t get_new_page, unsigned long private,
-			struct page *page, int force, enum migrate_mode mode)
+static int unmap_and_move(new_page_t get_new_page, free_page_t put_new_page,
+			unsigned long private, struct page *page,
+			int force, enum migrate_mode mode)
 {
 	int rc = 0;
 	int *result = NULL;
 	struct page *newpage = get_new_page(page, private, &result);
+	extern struct address_space zsmalloc_mapping;
 
 	if (!newpage)
 		return -ENOMEM;
 
-	if (page_count(page) == 1) {
+	if (page_count(page) == 1 && page->mapping != &zsmalloc_mapping) {
 		/* page was freed from under us. So we are done. */
 		goto out;
 	}
@@ -902,13 +976,28 @@ out:
 		list_del(&page->lru);
 		dec_zone_page_state(page, NR_ISOLATED_ANON +
 				page_is_file_cache(page));
-		putback_lru_page(page);
 	}
+
 	/*
-	 * Move the new page to the LRU. If migration was not successful
-	 * then this will free the page.
+	 * If migration is successful, drop the reference grabbed during
+	 * isolation. Otherwise, restore the page to LRU list unless we
+	 * want to retry.
 	 */
-	putback_lru_page(newpage);
+	if (rc == MIGRATEPAGE_SUCCESS) {
+		put_page(page);
+	} else {
+		if (rc != -EAGAIN) {
+			if (likely(!PageIsolated(page)))
+				putback_lru_page(page);
+			else
+				putback_movable_page(page);
+		}
+		if (put_new_page)
+			put_new_page(newpage, private);
+		else
+			put_page(newpage);
+	}
+
 	if (result) {
 		if (rc)
 			*result = rc;
@@ -1005,7 +1094,8 @@ out:
  * Returns the number of pages that were not migrated, or an error code.
  */
 int migrate_pages(struct list_head *from, new_page_t get_new_page,
-		unsigned long private, enum migrate_mode mode, int reason)
+		free_page_t put_new_page, unsigned long private,
+		enum migrate_mode mode, int reason)
 {
 	int retry = 1;
 	int nr_failed = 0;
@@ -1025,8 +1115,8 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 		list_for_each_entry_safe(page, page2, from, lru) {
 			cond_resched();
 
-			rc = unmap_and_move(get_new_page, private,
-						page, pass > 2, mode);
+			rc = unmap_and_move(get_new_page, put_new_page,
+					private, page, pass > 2, mode);
 
 			switch(rc) {
 			case -ENOMEM:
