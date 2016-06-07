@@ -7,6 +7,8 @@
 
 typedef struct page *new_page_t(struct page *, unsigned long private, int **);
 
+typedef void free_page_t(struct page *page, unsigned long private);
+
 /*
  * Return values from addresss_space_operations.migratepage():
  * - negative errno on page migration failure;
@@ -39,10 +41,11 @@ extern void putback_lru_pages(struct list_head *l);
 extern void putback_movable_pages(struct list_head *l);
 extern int migrate_page(struct address_space *,
 			struct page *, struct page *, enum migrate_mode);
-extern int migrate_pages(struct list_head *l, new_page_t x,
+extern int migrate_pages(struct list_head *l, new_page_t x, free_page_t free,
 		unsigned long private, enum migrate_mode mode, int reason);
 extern int migrate_huge_page(struct page *, new_page_t x,
 		unsigned long private, enum migrate_mode mode);
+extern bool isolate_movable_page(struct page *page);
 
 extern int fail_migrate_page(struct address_space *,
 			struct page *, struct page *);

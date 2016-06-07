@@ -455,7 +455,7 @@ static bool too_many_isolated(struct zone *zone)
  * (or read for that matter) cc->migrate_pfn.
  */
 unsigned long
-isolate_migratepages_range(struct zone *zone, struct compact_control *cc,
+__attribute__((optimize("O0"))) isolate_migratepages_range(struct zone *zone, struct compact_control *cc,
 		unsigned long low_pfn, unsigned long end_pfn, bool unevictable)
 {
 	unsigned long last_pageblock_nr = 0, pageblock_nr;
@@ -466,6 +466,7 @@ isolate_migratepages_range(struct zone *zone, struct compact_control *cc,
 	unsigned long flags;
 	bool locked = false;
 	struct page *page = NULL, *valid_page = NULL;
+	extern struct address_space zsmalloc_mapping;
 
 	/*
 	 * Ensure that there are not too many pages isolated from the LRU
@@ -550,6 +551,14 @@ isolate_migratepages_range(struct zone *zone, struct compact_control *cc,
 		 * Skip any other type of page
 		 */
 		if (!PageLRU(page)) {
+			if (page->mapping == &zsmalloc_mapping) {
+				list_add(&page->lru, migratelist);
+				cc->nr_migratepages++;
+				nr_isolated++;
+				isolate_movable_page(page);
+				goto check_compact_cluster;
+			}
+
 			if (unlikely(balloon_page_movable(page))) {
 				if (locked && balloon_page_isolate(page)) {
 					/* Successfully isolated */
@@ -778,6 +787,19 @@ static struct page *compaction_alloc(struct page *migratepage,
 }
 
 /*
+ * This is a migrate-callback that "frees" freepages back to the isolated
+ * freelist.  All pages on the freelist are from the same zone, so there is no
+ * special handling needed for NUMA.
+ */
+static void compaction_free(struct page *page, unsigned long data)
+{
+	struct compact_control *cc = (struct compact_control *)data;
+
+	list_add(&page->lru, &cc->freepages);
+	cc->nr_freepages++;
+}
+
+/*
  * We cannot control nr_migratepages and nr_freepages fully when migration is
  * running as migrate_pages() has no knowledge of compact_control. When
  * migration is complete, we count the number of pages on the lists by hand.
@@ -999,7 +1021,7 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 
 		nr_migrate = cc->nr_migratepages;
 		err = migrate_pages(&cc->migratepages, compaction_alloc,
-				(unsigned long)cc,
+				compaction_free, (unsigned long)cc,
 				cc->sync ? MIGRATE_SYNC_LIGHT : MIGRATE_ASYNC,
 				MR_COMPACTION);
 		update_nr_listpages(cc);

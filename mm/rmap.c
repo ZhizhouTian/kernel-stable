@@ -1634,6 +1634,9 @@ int try_to_unmap(struct page *page, enum ttu_flags flags)
 
 	BUG_ON(!PageLocked(page));
 	VM_BUG_ON(!PageHuge(page) && PageTransHuge(page));
+	extern struct address_space zsmalloc_mapping;
+	if (page->mapping == &zsmalloc_mapping)
+		return SWAP_SUCCESS;
 
 	if (unlikely(PageKsm(page)))
 		ret = try_to_unmap_ksm(page, flags);
@@ -1745,8 +1748,12 @@ static int rmap_walk_file(struct page *page, int (*rmap_one)(struct page *,
 int rmap_walk(struct page *page, int (*rmap_one)(struct page *,
 		struct vm_area_struct *, unsigned long, void *), void *arg)
 {
+	extern struct address_space zsmalloc_mapping;
+
 	VM_BUG_ON(!PageLocked(page));
 
+	if (page->mapping == &zsmalloc_mapping)
+		return SWAP_SUCCESS;
 	if (unlikely(PageKsm(page)))
 		return rmap_walk_ksm(page, rmap_one, arg);
 	else if (PageAnon(page))
