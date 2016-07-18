@@ -165,6 +165,15 @@ Eoverflow:
  *
  *	Ready-made ->f_op->read()
  */
+/* 在利用seq来显示vma数据的时候， seq_operations需要注册四个函数：
+ * seq_operations = {
+ *    .start = m_start; -->负责进行初始化
+ *    .next = m_next; --> 负责找到下一个元素(vma)
+ *    .stop = m_stop; --> 停止遍历时的动作
+ *    .show = show_pid_smap --> 读取vma数据的细节。
+ *    通过seq_print来将这些数据传递给seq的buffer
+ * }
+ */
 ssize_t seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 {
 	struct seq_file *m = file->private_data;
@@ -186,6 +195,11 @@ ssize_t seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 	 * It is copied in first and copied out after all operations.
 	 * It is convenient to have it as  part of structure to avoid the
 	 * need of passing another argument to all the seq_file methods.
+	 */
+	/*
+	 * version是seq_file的一个关键参数，能够决定这一次是否拷贝成功。
+	 * seq的缓冲是用到的时候才分配的，读到的数据比当前缓冲剩余大，
+	 * 拷贝就会不成功。这时,version也不会增长。
 	 */
 	m->version = file->f_version;
 
@@ -244,6 +258,9 @@ ssize_t seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 			m->index = pos;
 			continue;
 		}
+		/* m->count表示读出来的数据的长度
+		 * m->size表示seq buff的剩余的长度
+		 */
 		if (m->count < m->size)
 			goto Fill;
 		m->op->stop(m, p);

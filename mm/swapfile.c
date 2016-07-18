@@ -933,11 +933,15 @@ int reuse_swap_page(struct page *page)
 	/* The page is part of THP and cannot be reused */
 	if (PageTransCompound(page))
 		return 0;
+	/* 此处应当为1 */
 	count = page_mapcount(page);
 	if (count <= 1 && PageSwapCache(page)) {
+		/* 从页槽中获得该页被映射了多少次 */
 		count += page_swapcount(page);
+		/* 如果并非只有一个进程映射，则不能从swap cache中删除 */
 		if (count == 1 && !PageWriteback(page)) {
 			delete_from_swap_cache(page);
+			/* 该函数调用者想向页中写入数据，所以要设置dirty */
 			SetPageDirty(page);
 		}
 	}
