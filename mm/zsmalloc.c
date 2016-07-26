@@ -1689,14 +1689,12 @@ static struct zspage *isolate_zspage(struct size_class *class, bool source)
 
 /*
  * putback_zspage - add @zspage into right class's fullness list
- * @pool: target pool
  * @class: destination class
  * @zspage: target page
  *
  * Return @zspage's fullness_group
  */
-static enum fullness_group putback_zspage(struct zs_pool *pool,
-			struct size_class *class,
+static enum fullness_group putback_zspage(struct size_class *class,
 			struct zspage *zspage)
 {
 	enum fullness_group fullness;
@@ -1704,15 +1702,6 @@ static enum fullness_group putback_zspage(struct zs_pool *pool,
 	fullness = get_fullness_group(class, zspage);
 	insert_zspage(class, zspage, fullness);
 	set_zspage_mapping(zspage, class->index, fullness);
-
-	if (fullness == ZS_EMPTY) {
-		zs_stat_dec(class, OBJ_ALLOCATED, get_maxobj_per_zspage(
-			class->size, class->pages_per_zspage));
-		atomic_long_sub(class->pages_per_zspage,
-				&pool->pages_allocated);
-
-		free_zspage(pool, zspage);
-	}
 
 	return fullness;
 }
@@ -1743,7 +1732,7 @@ static unsigned long __zs_compact(struct zs_pool *pool,
 			if (!migrate_zspage(pool, class, &cc))
 				break;
 
-			putback_zspage(pool, class, dst_zspage);
+			putback_zspage(class, dst_zspage);
 			nr_total_migrated += cc.nr_migrated;
 			nr_to_migrate -= cc.nr_migrated;
 		}
@@ -1752,8 +1741,14 @@ static unsigned long __zs_compact(struct zs_pool *pool,
 		if (dst_zspage == NULL)
 			break;
 
-		putback_zspage(pool, class, dst_zspage);
-		putback_zspage(pool, class, src_zspage);
+		putback_zspage(class, dst_zspage);
+		if (putback_zspage(class, src_zspage) == ZS_EMPTY) {
+			zs_stat_dec(class, OBJ_ALLOCATED, get_maxobj_per_zspage(
+					class->size, class->pages_per_zspage));
+			atomic_long_sub(class->pages_per_zspage,
+					&pool->pages_allocated);
+			free_zspage(pool, src_zspage);
+		}
 		spin_unlock(&class->lock);
 		nr_total_migrated += cc.nr_migrated;
 		cond_resched();
@@ -1761,7 +1756,7 @@ static unsigned long __zs_compact(struct zs_pool *pool,
 	}
 
 	if (src_zspage)
-		putback_zspage(pool, class, src_zspage);
+		putback_zspage(class, src_zspage);
 
 	spin_unlock(&class->lock);
 
