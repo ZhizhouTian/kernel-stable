@@ -401,13 +401,16 @@ struct address_space *page_mapping(struct page *page)
 		swp_entry_t entry;
 
 		entry.val = page_private(page);
-		mapping = swap_address_space(entry);
-	} else
+		return swap_address_space(entry);
+	}
 #endif
+	mapping = page->mapping;
 	if ((unsigned long)mapping & PAGE_MAPPING_ANON)
-		mapping = NULL;
-	return mapping;
+		return NULL;
+
+	return (void *)((unsigned long)mapping & ~PAGE_MAPPING_FLAGS);
 }
+EXPORT_SYMBOL(page_mapping);
 
 /* Tracepoints definitions. */
 EXPORT_TRACEPOINT_SYMBOL(kmalloc);

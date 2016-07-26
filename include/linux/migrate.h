@@ -46,6 +46,8 @@ extern int migrate_huge_page(struct page *, new_page_t x,
 
 extern int fail_migrate_page(struct address_space *,
 			struct page *, struct page *);
+extern bool isolate_movable_page(struct page *page, isolate_mode_t mode);
+extern void putback_movable_page(struct page *page);
 
 extern int migrate_prep(void);
 extern int migrate_prep_local(void);
