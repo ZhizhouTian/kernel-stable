@@ -126,6 +126,9 @@ enum pageflags {
 
 	/* SLOB */
 	PG_slob_free = PG_private,
+
+	/* non-lru isolated movable page */
+	PG_isolated = PG_reclaim,
 };
 
 #ifndef __GENERATING_BOUNDS_H
@@ -461,6 +464,8 @@ static inline int PageTransTail(struct page *page)
 	return 0;
 }
 #endif
+
+__PAGEFLAG(Isolated, isolated);
 
 /*
  * If network-based swap is enabled, sl*b must keep track of whether pages
