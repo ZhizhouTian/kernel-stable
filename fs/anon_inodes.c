@@ -57,7 +57,7 @@ static const struct address_space_operations anon_aops = {
  * anon_inode inodes have no associated per-instance data, so we need
  * only allocate one of them.
  */
-static struct inode *anon_inode_mkinode(struct super_block *s)
+struct inode *anon_inode_mkinode(struct super_block *s)
 {
 	struct inode *inode = new_inode_pseudo(s);
 
