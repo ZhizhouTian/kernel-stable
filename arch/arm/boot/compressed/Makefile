@@ -9,6 +9,16 @@ OBJS		=
 AFLAGS_head.o += -DTEXT_OFFSET=$(TEXT_OFFSET)
 HEAD	= head.o
 OBJS	+= misc.o decompress.o
+OBJS    += ../../../../lib/decompress_unzstd.o
+OBJS    += ../../../../lib/zstd/zstd_decompress.o
+OBJS    += ../../../../lib/zstd/huf_decompress.o
+OBJS    += ../../../../lib/zstd/entropy_common.o
+../../../../lib/zstd/fse_decompress.o:misc.o
+OBJS    += ../../../../lib/zstd/fse_decompress.o
+OBJS    += ../../../../lib/zstd/zstd_common.o
+OBJS    += ../../../../lib/zstd/xxhash.o
+OBJS    += ../../../../lib/zstd/error_private.o
+
 ifeq ($(CONFIG_DEBUG_UNCOMPRESS),y)
 OBJS	+= debug.o
 endif

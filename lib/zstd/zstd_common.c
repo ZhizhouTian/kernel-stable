@@ -12,6 +12,8 @@
 /*-*************************************
 *  Dependencies
 ***************************************/
+#define STATIC
+#define STATIC_RW_DATA
 #include <linux/decompress/mm.h>
 #include "error_private.h"
 #define ZSTD_STATIC_LINKING_ONLY
@@ -71,13 +73,13 @@ void ZSTD_defaultFreeFunction(void* opaque, void* address)
     free(address);
 }
 
-void* ZSTD_malloc(size_t size, ZSTD_customMem customMem)
+void* ZSTD_malloc(size_t size)
 {
-    return customMem.customAlloc(customMem.opaque, size);
+    return malloc(size);
 }
 
-void ZSTD_free(void* ptr, ZSTD_customMem customMem)
+void ZSTD_free(void* ptr)
 {
     if (ptr!=NULL)
-        customMem.customFree(customMem.opaque, ptr);
+        free(ptr);
 }

@@ -30,6 +30,10 @@
 STATIC_RW_DATA unsigned long malloc_ptr;
 STATIC_RW_DATA int malloc_count;
 
+#include <linux/stddef.h>
+extern unsigned long free_mem_ptr;
+extern unsigned long free_mem_end_ptr;
+
 static void *malloc(int size)
 {
 	void *p;

@@ -61,7 +61,6 @@
 #include "bitstream.h"
 #define FSE_STATIC_LINKING_ONLY
 #include "fse.h"
-#include <linux/decompress/mm.h>
 
 
 /* **************************************************************
@@ -102,17 +101,19 @@ typedef U32 DTable_max_t[FSE_DTABLE_SIZE_U32(FSE_MAX_TABLELOG)];
 #define FSE_FUNCTION_NAME(X,Y) FSE_CAT(X,Y)
 #define FSE_TYPE_NAME(X,Y) FSE_CAT(X,Y)
 
+extern void* ZSTD_malloc(size_t size);
+extern void ZSTD_free(void* ptr);
 
 /* Function templates */
 FSE_DTable* FSE_createDTable (unsigned tableLog)
 {
     if (tableLog > FSE_TABLELOG_ABSOLUTE_MAX) tableLog = FSE_TABLELOG_ABSOLUTE_MAX;
-    return (FSE_DTable*)malloc( FSE_DTABLE_SIZE_U32(tableLog) * sizeof (U32) );
+    return (FSE_DTable*)ZSTD_malloc( FSE_DTABLE_SIZE_U32(tableLog) * sizeof (U32) );
 }
 
 void FSE_freeDTable (FSE_DTable* dt)
 {
-    free(dt);
+    ZSTD_free(dt);
 }
 
 size_t FSE_buildDTable(FSE_DTable* dt, const short* normalizedCounter, unsigned maxSymbolValue, unsigned tableLog)

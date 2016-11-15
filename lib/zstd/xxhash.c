@@ -97,9 +97,12 @@
 ***************************************/
 /* Modify the local functions below should you wish to use some other memory routines */
 /* for malloc(), free() */
-#include <linux/decompress/mm.h>
-static void* XXH_malloc(size_t s) { return malloc(s); }
-static void  XXH_free  (void* p)  { free(p); }
+#include <stddef.h>
+extern void* ZSTD_malloc(size_t size);
+extern void ZSTD_free(void* ptr);
+
+static void* XXH_malloc(size_t s) { return ZSTD_malloc(s); }
+static void  XXH_free  (void* p)  { ZSTD_free(p); }
 /* for memcpy() */
 #include <linux/string.h>
 static void* XXH_memcpy(void* dest, const void* src, size_t size) { return memcpy(dest,src,size); }

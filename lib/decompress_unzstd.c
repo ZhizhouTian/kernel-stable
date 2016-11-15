@@ -17,6 +17,7 @@ STATIC int __decompress(unsigned char *buf, long in_len,
 	size_t decompress_size;
 
 	out_size = ZSTD_getDecompressedSize(buf, in_len);
+
 	if (out_size == 0)
 		return -1;
 
